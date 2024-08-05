@@ -1,0 +1,270 @@
+---
+title: "Study on COVID Death Rate in Nursing Home"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mice)
+library(rpart)
+library(rpart.plot)
+library(Amelia)
+library(missForest)
+library(doParallel)
+library(nnet)
+library(MASS)
+```
+
+SD: Submitted Data
+PQA: Passed Quality Assurance Check
+RTA: Residents Total Admissions COVID-19
+NB: Number of All Beds
+OB: Total Number of Occupied Beds
+CTR: Able to Test or Obtain Resources to Test All Current Residents Within Next 7 Days
+CTS: Able to Test or Obtain Resources to Test All Staff and/or Personnel Within Next 7 Days
+TR: COVID-19 Point-of-Care Tests Performed on Residents Since Last Report
+TS: COVID-19 Point-of-Care Tests Performed on Staff and/or Personnel Since Last Report
+STC: Staff Total Confirmed COVID-19
+STD: Staff Total COVID-19 Deaths
+SN: Shortage of Nursing Staff
+SC: Shortage of Clinical Staff
+SA: Shortage of Aides
+SO: Shortage of Other Staff
+RCR: Total Resident Confirmed COVID-19 Cases Per 1,000 Residents
+RDR: Total Resident COVID-19 Deaths Per 1,000 Residents
+NRNI: Number of Residents with New Influenza
+NRAR: Number of Residents with Acute Respiratory Illness Symptoms Excluding COVID-19 and/or Influenza
+ATT: During Past Two Weeks Average Time to Receive COVID-19 Test Results from Non-Point-of-Care Tests
+NSRA: Number of Staff and/or Personnel with Acute Respiratory Illness Symptoms Excluding COVID-19 and/or Influenza
+ABHR: Alcohol-Based Hand Rub (ABHR) Available
+N95RS: N95 Respirator Strategy for Optimization
+FMS: Face Masks Strategy for Optimization
+EPS: Eye Protection Strategy for Optimization
+GS: Gowns Strategy for Optimization
+GLS: Gloves Strategy for Optimization
+
+
+# Data Exploration and cleanup
+
+```{R}
+# Import dataset
+data <- read.csv("COVID_19_Nursing_Home_Data.csv", head=TRUE)
+```
+
+
+```{R}
+# Cleanup
+data[data == "" | data == " "] <- NA
+# Drop subjects that did not submit data in this cycle or data did not pass
+# QA check
+# Drop rows where response is missing
+data = data[(data$SD == "Y" | data$PQA == "Y") & !is.na(data$RDR), ]
+# Drop submit data and QA check status
+data <- subset(data, select = -c(SD, PQA))
+# Remove subjects with only NA values
+data = data[!!rowSums(!is.na(data)),]
+# Use bed occupation rate instead of bed counts
+data$BOC = data$OB / data$NB
+# Drop bed counts
+data <- subset(data, select = -c(OB, NB))
+name <- names(data)
+
+for (i in 1:length(name)) {
+  col =name[i]
+  if (class(data[, col]) == "character") {
+    data[, col]= as.factor(data[, col])
+  }
+}
+
+# Check which columns are missing
+index <- names(data)
+tabcol2 <- rep(NA, length(index))
+for (i in 1:length(index)){
+  col = index[i]
+  tabcol2[i] = length(which(is.na(data[,col])))
+}
+index[which(tabcol2/length(data[,1])>0.05)] # missing percentage > 0.05
+index[which(tabcol2/length(data[,1])>0)] # missing data
+
+# Use decision tree to find significant variate that we want to keep
+df <- rpart(data$RDR~ .,
+            data = data,
+            control = rpart.control(minsplit = 1,
+                                    minbucket = 1,
+                                    maxdepth = 5,
+                                    cp = 0,
+                                    xval = 6))
+rpart.plot(df)
+
+# variables to consider
+var_import <- names(df$variable.importance)
+```
+
+```{r fig.width = 5, fig.height = 5}
+# Visualize missing pattern of original dataset
+md.pattern(data)
+```
+
+# Missing Mechanism:
+```{r}
+# Variable with missing values
+var_miss <- index[which(tabcol2/length(data[,1])>0)]
+# Only keep the significant ones we wanted to keep in previous section
+var_miss <- intersect(var_miss, var_import)
+# Significant variables that do not contain missing values
+var_complete <- setdiff(var_import, var_miss)
+
+# Compute missing mechanism of all variables with missing values
+for (i in 1:length(var_miss)) {
+  loopdata = data[var_import]
+  misscol = var_miss[i]
+  print(misscol)
+  loopdata$R <- ifelse(is.na(data[,misscol]), 1, 0)
+  loopdata[,misscol] <- NULL
+  mechanism = glm(R ~ RCR + STC + RTA + STD,family = "binomial",
+                  data=loopdata)
+  print(summary(mechanism))
+}
+```
+
+```{r}
+# Visualization of missing pattern of dataset with only significant variables
+data_import <- data[c(var_import, "RDR")]
+md.pattern(data[var_import])
+```
+
+
+# MCAR Imputation
+```{r}
+# Variable MCAR, impute them with linear model
+fit=glm(CTR~ RCR + STC + RTA + STD,data=data_import, family = "binomial")
+data_import$impute.CTR=predict(fit,newdata=data_import)
+data_import$impute.CTR[!is.na(data_import$CTR)]=
+  data_import$CTR[!is.na(data_import$CTR)]
+data_import$CTR = data_import$impute.CTR
+data_import = subset(data_import, select = -c(impute.CTR))
+
+
+fit=glm(CTS~ RCR + STC + RTA + STD,data=data_import, family = "binomial")
+data_import$impute.CTS=predict(fit,newdata=data_import)
+data_import$impute.CTS[!is.na(data_import$CTS)]=
+  data_import$CTS[!is.na(data_import$CTS)]
+data_import$CTS = data_import$impute.CTS
+data_import = subset(data_import, select = -c(impute.CTS))
+
+fit=glm(SN~ RCR + STC + RTA + STD,data=data_import, family = "binomial")
+data_import$impute.SN=predict(fit,newdata=data_import)
+data_import$impute.SN[!is.na(data_import$SN)]=
+  data_import$SN[!is.na(data_import$SN)]
+data_import$SN = data_import$impute.SN
+data_import = subset(data_import, select = -c(impute.SN))
+
+fit=glm(SA~ RCR + STC + RTA + STD,data=data_import, family = "binomial")
+data_import$impute.SA=predict(fit,newdata=data_import)
+data_import$impute.SA[!is.na(data_import$SA)]=
+  data_import$SA[!is.na(data_import$SA)]
+data_import$SA = data_import$impute.SA
+data_import = subset(data_import, select = -c(impute.SA))
+
+fit=glm(N95RS~ RCR + STC + RTA + STD,data=data_import, family = "binomial")
+data_import$impute.N95RS=predict(fit,newdata=data_import)
+data_import$impute.N95RS[!is.na(data_import$N95RS)]=
+  data_import$N95RS[!is.na(data_import$N95RS)]
+data_import$N95RS = data_import$impute.N95RS
+data_import = subset(data_import, select = -c(impute.N95RS))
+
+fit=multinom(EPS~ RCR + STC + RTA + STD, data = data_import)
+data_import$impute.EPS=predict(fit,newdata=data_import)
+data_import$impute.EPS[!is.na(data_import$EPS)]=
+  data_import$EPS[!is.na(data_import$EPS)]
+data_import$EPS = data_import$impute.EPS
+data_import = subset(data_import, select = -c(impute.EPS))
+
+fit=multinom(GS~ RCR + STC + RTA + STD, data = data_import)
+data_import$impute.GS=predict(fit,newdata=data_import)
+data_import$impute.GS[!is.na(data_import$GS)]=
+  data_import$GS[!is.na(data_import$GS)]
+data_import$GS = data_import$impute.GS
+data_import = subset(data_import, select = -c(impute.GS))
+```
+
+
+```{r}
+for (i in 1:length(names(data_import))) {
+  col =names(data_import)[i]
+  if (class(data_import[, col]) == "factor") {
+    data_import[, col]= as.numeric(data_import[, col])
+  }
+}
+```
+
+
+# Non-MCAR Imputation
+
+## EM algorithm
+```{r}
+set.seed(438)
+data.imputed.em=amelia(data_import, m=5)
+data.imputed.em <- data.imputed.em$imputations$imp5
+```
+
+
+
+# Analysis, Correlation
+
+
+```{r}
+### stage1
+resp.zero <- which(data.imputed.em$RDR==0)
+resp.nonzero <- which(data.imputed.em$RDR!=0)
+
+data.imputed.em$bin.resp <- ifelse(data.imputed.em$RDR==0, 0, 1)
+
+m.stage1 <- glm(bin.resp~RCR+STC+RTA+BOC+SN+GS+SA+TS+STD+EPS+N95RS+CTS+CTR,
+                family=binomial(link="logit"),
+                data=data.imputed.em)
+summary(m.stage1)
+
+### stage2
+#### Box-cox transformation
+bc <- boxcox(lm(RDR~RCR+STC+RTA+BOC+SN+GS+SA+TS+STD+EPS+N95RS+CTS+CTR,
+                data=data.imputed.em[resp.nonzero,]))
+lambda <- bc$x[which.max(bc$y)]
+
+m.stage2 <- glm((RDR^lambda-1)/lambda~RCR+STC+RTA+BOC+SN+GS+SA+TS+STD+EPS+N95RS+CTS+CTR,
+                data=data.imputed.em[resp.nonzero,])
+summary(m.stage2)
+```
+
+
+```{r}
+# stage 1 
+library(knitr)
+table1 <- data.frame(rbind(
+  c("RCR",4.173e-03,  1.178e-04),
+  c("STC",3.200e-02,  2.003e-03),
+  c("RTA",3.267e-02,  2.587e-03),
+  c("BOC",3.004e-01,  1.502e-01),
+  c("TS",8.594e-04,  4.152e-04),
+  c("STD",2.170e-01,  8.093e-02)))
+colnames(table1) <- c("Predictor", "Estimates", "Standard Error")
+kable(table1)
+
+# stage 2 
+library(knitr)
+table2 <- data.frame(rbind(
+  c("RCR",0.0026112,  0.0000462),
+  c("STC",0.0052874,  0.0007866),
+  c("RTA",0.0078496,  0.0003809),
+  c("BOC",-1.8101680,  0.1144047),
+  c("SA",0.2340079,  0.0880236),
+  c("TS",-0.0014927,  0.0002382),
+  c("STD",0.2139176,  0.0317822)))
+colnames(table2) <- c("Predictor", "Estimates", "Standard Error")
+kable(table2)
+
+```
+
+
