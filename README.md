@@ -14,3 +14,6 @@
 ##   - Missing Data Analysis, Visualization and Manipulation using Machine Learning Method
 ##   - Non-MCAR (not missing completely at random) Imputation
 ##   - expectation–maximization (EM) algorithm
+
+
+# 5) Yield Curve Interpolation and Forward Rate
