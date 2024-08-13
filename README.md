@@ -1,19 +1,23 @@
-# This folder contains the following projects
+### This folder contains the following projects
 
-# 1) Brownian Motion and Black Scholes
-##   - convergence of a walk on a discrete lattice
-##   - Brownian motion and Ito calculus
-##   - Black-Scholes Option Prices and Deltas
+# Quantitative Finance:
 
-# 2) Delta Hedge Simulation
+## 1) Brownian Motion and Black Scholes
+###   - convergence of a walk on a discrete lattice
+###   - Brownian motion and Ito calculus
+###   - Black-Scholes Option Prices and Deltas
 
-# 3) Monte Carlo Simulation of Option Price
+## 2) Delta Hedge Simulation
 
-# 4) Statistical Study on COVID Death Rate in Nursing Home
-##   - Data Exploration and Clean-up
-##   - Missing Data Analysis, Visualization and Manipulation using Machine Learning Method
-##   - Non-MCAR (not missing completely at random) Imputation
-##   - expectation–maximization (EM) algorithm
+## 3) Monte Carlo Simulation of Option Price
+
+## 4) Yield Curve Interpolation and Forward Rate
 
 
-# 5) Yield Curve Interpolation and Forward Rate
+# Causal Inference:
+
+## 1) Statistical Study on COVID Death Rate in Nursing Home
+###   - Data Exploration and Clean-up
+###   - Missing Data Analysis, Visualization and Manipulation using Machine Learning Method
+###   - Non-MCAR (not missing completely at random) Imputation
+###   - expectation–maximization (EM) algorithm
